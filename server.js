@@ -4,9 +4,14 @@ const http = require('http');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server);
+const path = require('path'); // Added this to fix the path error
 
+// Serve static files from the current directory
+app.use(express.static(__dirname));
+
+// Fix: Use path.join to safely find index.html on Linux servers
 app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Store all connected players
@@ -15,33 +20,28 @@ let players = {};
 io.on('connection', (socket) => {
   console.log('A racer connected: ' + socket.id);
 
-  // Create a new player object
   players[socket.id] = {
     x: 0,
     z: 0,
     angle: 0,
-    isDrifting: false, // <-- crucial for smoke/skids
-    color: Math.random() * 0xffffff // Random car color
+    isDrifting: false,
+    color: Math.random() * 0xffffff
   };
 
-  // Send the current list of players to the new guy
   socket.emit('currentPlayers', players);
 
-  // Tell everyone else a new guy joined
   socket.broadcast.emit('newPlayer', { 
     id: socket.id, 
     player: players[socket.id] 
   });
 
-  // When a player moves
   socket.on('playerMovement', (movementData) => {
     if (players[socket.id]) {
       players[socket.id].x = movementData.x;
       players[socket.id].z = movementData.z;
       players[socket.id].angle = movementData.angle;
-      players[socket.id].isDrifting = movementData.isDrifting; // Sync drift state
+      players[socket.id].isDrifting = movementData.isDrifting;
       
-      // Relay this movement to everyone else
       socket.broadcast.emit('playerMoved', {
         id: socket.id,
         x: players[socket.id].x,
@@ -59,6 +59,7 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(3000, () => {
-  console.log('DRIFT SERVER running on *:3000');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`DRIFT SERVER running on port ${PORT}`);
 });
