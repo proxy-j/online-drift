@@ -4,17 +4,16 @@ const http = require('http');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server);
-const path = require('path'); // Added this to fix the path error
+const path = require('path');
 
-// Serve static files from the current directory
-app.use(express.static(__dirname));
+// 1. Tell Express to serve static files from the 'public' folder
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Fix: Use path.join to safely find index.html on Linux servers
+// 2. Serve index.html specifically from the 'public' folder
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Store all connected players
 let players = {};
 
 io.on('connection', (socket) => {
