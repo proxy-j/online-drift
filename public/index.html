@@ -71,6 +71,7 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             document.body.appendChild(renderer.domElement);
 
+            // Lighting
             const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
             hemiLight.position.set(0, 100, 0);
             scene.add(hemiLight);
@@ -87,8 +88,11 @@
             dirLight.shadow.camera.top = d; dirLight.shadow.camera.bottom = -d;
             scene.add(dirLight);
 
+            // Create Environment
             createParkingLot();
             createCityBorderOptimized();
+            
+            // Create Car
             createCar();
 
             window.addEventListener('resize', onWindowResize);
@@ -158,6 +162,7 @@
         }
 
         function createParkingLot() {
+            // Ground
             const groundGeo = new THREE.PlaneGeometry(CONFIG.mapSize, CONFIG.mapSize);
             const groundMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8, metalness: 0.1 });
             const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -165,6 +170,7 @@
             ground.receiveShadow = true;
             scene.add(ground);
 
+            // Parking Lines (Optimized)
             const lineGeo = new THREE.PlaneGeometry(0.5, 10);
             const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.5, transparent: true });
             const parkingLines = new THREE.InstancedMesh(lineGeo, lineMat, 400);
@@ -185,11 +191,75 @@
                 }
             }
             scene.add(parkingLines);
+
+            // --- RESTORED LIGHT POLES ---
+            const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 15);
+            const poleMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+            const lampGeo = new THREE.BoxGeometry(4, 1, 2);
+            const lampMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+            
+            const polePositions = [
+                {x: 50, z: 50}, {x: -50, z: 50},
+                {x: 50, z: -50}, {x: -50, z: -50},
+                {x: 100, z: 0}, {x: -100, z: 0}
+            ];
+
+            const poleMesh = new THREE.InstancedMesh(poleGeo, poleMat, polePositions.length);
+            const lampMesh = new THREE.InstancedMesh(lampGeo, lampMat, polePositions.length);
+            poleMesh.castShadow = true;
+
+            polePositions.forEach((pos, i) => {
+                // Pole Body
+                dummyObj.position.set(pos.x, 7.5, pos.z);
+                dummyObj.rotation.set(0, 0, 0);
+                dummyObj.scale.set(1, 1, 1);
+                dummyObj.updateMatrix();
+                poleMesh.setMatrixAt(i, dummyObj.matrix);
+
+                // Lamp Head
+                dummyObj.position.set(pos.x, 15, pos.z);
+                dummyObj.updateMatrix();
+                lampMesh.setMatrixAt(i, dummyObj.matrix);
+
+                // The Actual Light
+                const pl = new THREE.PointLight(0xffaa00, 30, 50);
+                pl.position.set(pos.x, 14, pos.z);
+                scene.add(pl);
+            });
+            scene.add(poleMesh);
+            scene.add(lampMesh);
+        }
+
+        // --- RESTORED TEXTURE GENERATOR ---
+        function createBuildingTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            
+            // Wall
+            ctx.fillStyle = '#444';
+            ctx.fillRect(0, 0, 64, 128);
+            
+            // Windows
+            ctx.fillStyle = '#8cf'; 
+            for(let y=10; y<120; y+=20) {
+                for(let x=10; x<60; x+=20) {
+                    if(Math.random() > 0.3) ctx.fillRect(x, y, 10, 15);
+                }
+            }
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            return tex;
         }
 
         function createCityBorderOptimized() {
+            // Use the texture again!
+            const buildingTex = createBuildingTexture();
             const buildingGeo = new THREE.BoxGeometry(1, 1, 1);
-            const buildingMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.2 });
+            const buildingMat = new THREE.MeshStandardMaterial({ map: buildingTex, roughness: 0.2 });
+            
             const buildings = new THREE.InstancedMesh(buildingGeo, buildingMat, 200);
             buildings.castShadow = true; buildings.receiveShadow = true;
 
