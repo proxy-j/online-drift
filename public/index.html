@@ -20,7 +20,7 @@
 </head>
 <body>
 
-    <div id="info">Multiplayer Drift - Open Multiple Tabs!</div>
+    <div id="info">Multiplayer Drift - Share the link to play!</div>
     <div id="speedometer">0 km/h</div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -51,7 +51,7 @@
         let skidMarks = [];
         let speed = 0;
         let carHeading = 0;
-        let otherPlayers = {}; // Stores meshes of other players
+        let otherPlayers = {}; 
         
         const dummyObj = new THREE.Object3D(); 
 
@@ -59,22 +59,18 @@
         animate();
 
         function init() {
-            // 1. Setup Scene
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); 
             scene.fog = new THREE.Fog(0x87CEEB, 60, 300);
 
-            // 2. Camera
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // 3. Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             document.body.appendChild(renderer.domElement);
 
-            // 4. Lights
             const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
             hemiLight.position.set(0, 100, 0);
             scene.add(hemiLight);
@@ -91,51 +87,39 @@
             dirLight.shadow.camera.top = d; dirLight.shadow.camera.bottom = -d;
             scene.add(dirLight);
 
-            // 5. Environment
             createParkingLot();
             createCityBorderOptimized();
-            
-            // 6. My Car
             createCar();
 
-            // 7. Inputs
             window.addEventListener('resize', onWindowResize);
             document.addEventListener('keydown', (e) => handleKey(e, true));
             document.addEventListener('keyup', (e) => handleKey(e, false));
 
-            // 8. MULTIPLAYER CONNECTION
             initSocket();
         }
 
         function initSocket() {
             socket = io();
 
-            // Receive list of current players
             socket.on('currentPlayers', (players) => {
                 Object.keys(players).forEach((id) => {
-                    if (id !== socket.id) {
-                        addOtherPlayer(players[id], id);
-                    }
+                    if (id !== socket.id) addOtherPlayer(players[id], id);
                 });
             });
 
-            // New player joined
             socket.on('newPlayer', (data) => {
                 addOtherPlayer(data.player, data.id);
             });
 
-            // Player moved
             socket.on('playerMoved', (data) => {
                 if (otherPlayers[data.id]) {
-                    // Update target properties for interpolation
                     otherPlayers[data.id].targetX = data.x;
                     otherPlayers[data.id].targetZ = data.z;
                     otherPlayers[data.id].targetAngle = data.angle;
-                    otherPlayers[data.id].isDrifting = data.isDrifting; // Sync Drift
+                    otherPlayers[data.id].isDrifting = data.isDrifting; 
                 }
             });
 
-            // Player left
             socket.on('playerDisconnected', (id) => {
                 if (otherPlayers[id]) {
                     scene.remove(otherPlayers[id].mesh);
@@ -147,7 +131,6 @@
         function addOtherPlayer(data, id) {
             const playerGroup = new THREE.Group();
             
-            // Simple visual for other cars (Gray/Colored Box)
             const bodyGeo = new THREE.BoxGeometry(2, 0.8, 4);
             const bodyMat = new THREE.MeshStandardMaterial({ color: data.color || 0xcccccc });
             const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -155,7 +138,6 @@
             body.castShadow = true;
             playerGroup.add(body);
 
-            // Cabin
             const cabin = new THREE.Mesh(
                 new THREE.BoxGeometry(1.8, 0.5, 2),
                 new THREE.MeshStandardMaterial({ color: 0x222222 })
@@ -163,12 +145,9 @@
             cabin.position.set(0, 1.2, -0.2);
             playerGroup.add(cabin);
 
-            // Initial position
             playerGroup.position.set(data.x, 0, data.z);
-            
             scene.add(playerGroup);
 
-            // Store in object with interpolation targets
             otherPlayers[id] = {
                 mesh: playerGroup,
                 targetX: data.x,
@@ -178,7 +157,6 @@
             };
         }
 
-        // --- Environment Generation (Optimized) ---
         function createParkingLot() {
             const groundGeo = new THREE.PlaneGeometry(CONFIG.mapSize, CONFIG.mapSize);
             const groundMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8, metalness: 0.1 });
@@ -216,7 +194,6 @@
             buildings.castShadow = true; buildings.receiveShadow = true;
 
             let idx = 0;
-            const buildingWidth = 40;
             const range = CONFIG.mapSize/2 + 20;
             const countPerWall = Math.ceil(CONFIG.mapSize / 40) + 2;
 
@@ -237,7 +214,6 @@
 
         function createCar() {
             car = new THREE.Group();
-            
             const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), new THREE.MeshStandardMaterial({ color: 0xff0044 }));
             body.position.y = 0.6; body.castShadow = true; car.add(body);
             
@@ -251,7 +227,6 @@
                 w.rotation.z = Math.PI/2; w.position.set(...p); w.castShadow = true; car.add(w);
             });
 
-            // Headlights
             const lightGeo = new THREE.BoxGeometry(0.4, 0.2, 0.1);
             const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
             const l = new THREE.Mesh(lightGeo, lightMat); l.position.set(-0.6, 0.7, 2.0); car.add(l);
@@ -276,14 +251,13 @@
         function animate() {
             requestAnimationFrame(animate);
             updatePhysics();
-            updateMultiplayerCars(); // New: Updates remote cars
+            updateMultiplayerCars();
             updateEffects();
             updateCamera();
             renderer.render(scene, camera);
         }
 
         function updatePhysics() {
-            // ... (Same Physics logic) ...
             if (inputs.up) speed += CONFIG.acceleration;
             if (inputs.down) speed -= CONFIG.acceleration;
             speed *= CONFIG.friction;
@@ -309,7 +283,6 @@
             car.position.x += carVelocity.x;
             car.position.z += carVelocity.z;
 
-            // Border Bounce
             const limit = CONFIG.mapSize / 2 - 3;
             if (car.position.x > limit || car.position.x < -limit) { car.position.x = Math.sign(car.position.x)*limit; speed *= -0.5; }
             if (car.position.z > limit || car.position.z < -limit) { car.position.z = Math.sign(car.position.z)*limit; speed *= -0.5; }
@@ -319,7 +292,6 @@
 
             document.getElementById('speedometer').innerText = Math.abs(Math.round(speed * 200)) + " km/h";
 
-            // Emit to Server
             if(socket) {
                 const isTurning = inputs.left || inputs.right;
                 const isMovingFast = Math.abs(speed) > 0.4;
@@ -335,19 +307,12 @@
         }
 
         function updateMultiplayerCars() {
-            // Interpolate remote cars for smooth motion
             Object.keys(otherPlayers).forEach(id => {
                 const p = otherPlayers[id];
-                
-                // Lerp position (smooths lag)
                 p.mesh.position.x += (p.targetX - p.mesh.position.x) * 0.2;
                 p.mesh.position.z += (p.targetZ - p.mesh.position.z) * 0.2;
-                
-                // Smooth rotation
-                // Note: Simple lerp on angles can flip at 0/360, but good enough for demo
                 p.mesh.rotation.y = p.targetAngle; 
 
-                // Generate Effects for Remote Players if they are drifting!
                 if (p.isDrifting) {
                     createRemoteSmoke(p.mesh);
                     createRemoteSkids(p.mesh, p.targetAngle);
@@ -361,7 +326,6 @@
         const skidMat = new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
 
         function updateEffects() {
-            // Local Player Effects
             const isTurning = inputs.left || inputs.right;
             const isMovingFast = Math.abs(speed) > 0.4;
             if (isTurning && isMovingFast) {
@@ -369,7 +333,6 @@
                 createSkidMarks();
             }
 
-            // Update all particles (Local + Remote)
             for (let i = particles.length - 1; i >= 0; i--) {
                 const p = particles[i];
                 p.life -= 0.03; 
@@ -382,7 +345,6 @@
                 }
             }
 
-            // Update Skids
             if (skidMarks.length > 300) { const old = skidMarks.shift(); scene.remove(old.mesh); }
             for (let i = skidMarks.length - 1; i >= 0; i--) {
                 const s = skidMarks[i];
@@ -392,7 +354,6 @@
             }
         }
 
-        // --- Effect Generators (Reuse for Local & Remote) ---
         function createSmoke() { spawnSmokeAt(car.position.x, car.position.z, carHeading); }
         function createRemoteSmoke(mesh) { 
             if (Math.random() > 0.5) spawnSmokeAt(mesh.position.x, mesh.position.z, mesh.rotation.y); 
