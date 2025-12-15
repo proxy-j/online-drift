@@ -6,10 +6,8 @@ const { Server } = require("socket.io");
 const io = new Server(server);
 const path = require('path');
 
-// 1. Tell Express to serve static files from the 'public' folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 2. Serve index.html specifically from the 'public' folder
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -19,19 +17,32 @@ let players = {};
 io.on('connection', (socket) => {
   console.log('A racer connected: ' + socket.id);
 
+  // Initialize player with a default name
   players[socket.id] = {
     x: 0,
     z: 0,
     angle: 0,
     isDrifting: false,
-    color: Math.random() * 0xffffff
+    color: Math.random() * 0xffffff,
+    name: "Racer " + socket.id.substr(0,4) // Default name
   };
 
+  // Send current state to new player
   socket.emit('currentPlayers', players);
 
+  // Tell everyone else a new player joined
   socket.broadcast.emit('newPlayer', { 
     id: socket.id, 
     player: players[socket.id] 
+  });
+
+  // Listen for the Name Entry event
+  socket.on('joinGame', (playerName) => {
+    if(players[socket.id]) {
+        players[socket.id].name = playerName;
+        // Tell everyone this specific player changed their name
+        io.emit('updatePlayerName', { id: socket.id, name: playerName });
+    }
   });
 
   socket.on('playerMovement', (movementData) => {
