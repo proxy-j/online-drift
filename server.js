@@ -16,26 +16,27 @@ let players = {};
 
 io.on('connection', (socket) => {
   console.log('A racer connected: ' + socket.id);
-
+  
   // Initialize player with a default name
   players[socket.id] = {
     x: 0,
+    y: 0,
     z: 0,
     angle: 0,
     isDrifting: false,
     color: Math.random() * 0xffffff,
     name: "Racer " + socket.id.substr(0,4) // Default name
   };
-
+  
   // Send current state to new player
   socket.emit('currentPlayers', players);
-
+  
   // Tell everyone else a new player joined
   socket.broadcast.emit('newPlayer', { 
     id: socket.id, 
     player: players[socket.id] 
   });
-
+  
   // Listen for the Name Entry event
   socket.on('joinGame', (playerName) => {
     if(players[socket.id]) {
@@ -44,10 +45,11 @@ io.on('connection', (socket) => {
         io.emit('updatePlayerName', { id: socket.id, name: playerName });
     }
   });
-
+  
   socket.on('playerMovement', (movementData) => {
     if (players[socket.id]) {
       players[socket.id].x = movementData.x;
+      players[socket.id].y = movementData.y || 0;
       players[socket.id].z = movementData.z;
       players[socket.id].angle = movementData.angle;
       players[socket.id].isDrifting = movementData.isDrifting;
@@ -55,13 +57,14 @@ io.on('connection', (socket) => {
       socket.broadcast.emit('playerMoved', {
         id: socket.id,
         x: players[socket.id].x,
+        y: players[socket.id].y,
         z: players[socket.id].z,
         angle: players[socket.id].angle,
         isDrifting: players[socket.id].isDrifting
       });
     }
   });
-
+  
   socket.on('disconnect', () => {
     console.log('Racer disconnected: ' + socket.id);
     delete players[socket.id];
