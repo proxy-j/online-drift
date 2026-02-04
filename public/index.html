@@ -382,16 +382,17 @@
             scene.add(ground);
 
             // Create the map layout
-            // Map grid: 5x5 sections, each section is 60 units
-            const sectionSize = 60;
+            // Map grid: 5x5 sections, each section is 80 units to fill the map better
+            const sectionSize = 80;
             const platformHeight = 15;
+            const platformThickness = 3;
             
             // Map layout based on emoji grid:
-            // 🟦🟦🟦🟦🟦  (top platforms)
-            // 🟥⬛⬛⬛🟥  (ramps and ground)
+            // 🟦🟦🟦🟦🟦  (top platforms in corners)
+            // 🟥⬛⬛⬛🟥  (ramps on sides)
             // ⬛⬛⬛⬛⬛  (center ground)
-            // 🟥⬛⬛⬛🟥  (ramps and ground)
-            // 🟦🟦🟦🟦🟦  (bottom platforms)
+            // 🟥⬛⬛⬛🟥  (ramps on sides)
+            // 🟦🟦🟦🟦🟦  (bottom platforms in corners)
             
             const mapLayout = [
                 ['P','P','P','P','P'], // top row - platforms
@@ -401,22 +402,17 @@
                 ['P','P','P','P','P']  // bottom row - platforms
             ];
 
-            // Create platforms (🟦)
-            const platformGeo = new THREE.BoxGeometry(sectionSize, 2, sectionSize);
+            // Store platform and ramp collision boxes
+            window.gameColliders = [];
+
+            // Create platforms (🟦) - flat elevated surfaces
+            const platformGeo = new THREE.BoxGeometry(sectionSize, platformThickness, sectionSize);
             const platformMat = new THREE.MeshStandardMaterial({ 
                 color: 0x4488ff,
                 roughness: 0.6,
                 metalness: 0.2
             });
             
-            // Create ramp geometry
-            const rampGeo = new THREE.BoxGeometry(sectionSize, platformHeight, sectionSize);
-            const rampMat = new THREE.MeshStandardMaterial({ 
-                color: 0xff4444,
-                roughness: 0.7,
-                metalness: 0.1
-            });
-
             // Build the map
             for(let row = 0; row < 5; row++) {
                 for(let col = 0; col < 5; col++) {
@@ -425,12 +421,22 @@
                     const z = (row - 2) * sectionSize;
                     
                     if(type === 'P') {
-                        // Platform
+                        // Platform - flat box at elevated height
                         const platform = new THREE.Mesh(platformGeo, platformMat);
                         platform.position.set(x, platformHeight, z);
                         platform.castShadow = true;
                         platform.receiveShadow = true;
                         scene.add(platform);
+                        
+                        // Store collider info
+                        window.gameColliders.push({
+                            type: 'platform',
+                            minX: x - sectionSize/2,
+                            maxX: x + sectionSize/2,
+                            minZ: z - sectionSize/2,
+                            maxZ: z + sectionSize/2,
+                            height: platformHeight
+                        });
                         
                         // Add glow effect under platform
                         const glowLight = new THREE.PointLight(0x4488ff, 20, 40);
@@ -438,28 +444,104 @@
                         scene.add(glowLight);
                         
                     } else if(type === 'R') {
-                        // Ramp - create sloped geometry
+                        // Ramp - create properly sloped geometry
+                        // Use THREE.BufferGeometry to make a custom wedge shape
+                        const rampWidth = sectionSize;
+                        const rampLength = sectionSize;
+                        const rampHeight = platformHeight;
+                        
+                        // Create wedge-shaped ramp
+                        const rampGeo = new THREE.BufferGeometry();
+                        
+                        // Vertices for a wedge (ramp)
+                        const vertices = new Float32Array([
+                            // Front face (low end)
+                            -rampWidth/2, 0, rampLength/2,
+                            rampWidth/2, 0, rampLength/2,
+                            rampWidth/2, 0, rampLength/2,
+                            -rampWidth/2, 0, rampLength/2,
+                            
+                            // Back face (high end)
+                            -rampWidth/2, rampHeight, -rampLength/2,
+                            rampWidth/2, rampHeight, -rampLength/2,
+                            
+                            // Bottom
+                            -rampWidth/2, 0, rampLength/2,
+                            rampWidth/2, 0, rampLength/2,
+                            rampWidth/2, 0, -rampLength/2,
+                            -rampWidth/2, 0, -rampLength/2,
+                            
+                            // Sloped top
+                            -rampWidth/2, 0, rampLength/2,
+                            rampWidth/2, 0, rampLength/2,
+                            rampWidth/2, rampHeight, -rampLength/2,
+                            -rampWidth/2, rampHeight, -rampLength/2,
+                            
+                            // Left side
+                            -rampWidth/2, 0, rampLength/2,
+                            -rampWidth/2, 0, -rampLength/2,
+                            -rampWidth/2, rampHeight, -rampLength/2,
+                            
+                            // Right side
+                            rampWidth/2, 0, rampLength/2,
+                            rampWidth/2, rampHeight, -rampLength/2,
+                            rampWidth/2, 0, -rampLength/2,
+                        ]);
+                        
+                        const indices = [
+                            // Bottom
+                            6,7,8, 6,8,9,
+                            // Top sloped surface
+                            10,11,12, 10,12,13,
+                            // Front (low)
+                            0,1,10, 1,11,10,
+                            // Back (high)
+                            4,5,12, 4,12,13,
+                            // Left
+                            14,15,16, 14,16,16,
+                            // Right  
+                            17,18,19, 17,17,19
+                        ];
+                        
+                        rampGeo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                        rampGeo.setIndex(indices);
+                        rampGeo.computeVertexNormals();
+                        
+                        const rampMat = new THREE.MeshStandardMaterial({ 
+                            color: 0xff4444,
+                            roughness: 0.7,
+                            metalness: 0.1
+                        });
+                        
                         const ramp = new THREE.Mesh(rampGeo, rampMat);
                         
-                        // Determine ramp orientation
-                        let rotationY = 0;
-                        if(row === 1 && col === 0) rotationY = Math.PI / 2; // left ramp up
-                        if(row === 1 && col === 4) rotationY = -Math.PI / 2; // right ramp up
-                        if(row === 3 && col === 0) rotationY = Math.PI / 2; // left ramp down
-                        if(row === 3 && col === 4) rotationY = -Math.PI / 2; // right ramp down
-                        
-                        // Tilt the ramp
-                        const tiltAngle = Math.PI / 6; // 30 degrees
+                        // Determine ramp orientation - ramps should point TOWARD platforms
+                        // Top row (row 1) ramps point UP (toward row 0 platforms)
+                        // Bottom row (row 3) ramps point DOWN (toward row 4 platforms)
                         if(row === 1) {
-                            ramp.rotation.set(-tiltAngle, rotationY, 0); // slope up
-                        } else {
-                            ramp.rotation.set(tiltAngle, rotationY, 0); // slope down
+                            // Top ramp - points upward (toward north/row 0)
+                            ramp.rotation.y = 0; // Face north
+                        } else if(row === 3) {
+                            // Bottom ramp - points downward (toward south/row 4)
+                            ramp.rotation.y = Math.PI; // Face south (flip 180°)
                         }
                         
-                        ramp.position.set(x, platformHeight/2, z);
+                        ramp.position.set(x, 0, z);
                         ramp.castShadow = true;
                         ramp.receiveShadow = true;
                         scene.add(ramp);
+                        
+                        // Store collider info
+                        window.gameColliders.push({
+                            type: 'ramp',
+                            minX: x - sectionSize/2,
+                            maxX: x + sectionSize/2,
+                            minZ: z - sectionSize/2,
+                            maxZ: z + sectionSize/2,
+                            row: row,
+                            height: platformHeight,
+                            length: sectionSize
+                        });
                         
                         // Add warning lights on ramps
                         const warnLight = new THREE.PointLight(0xff4444, 15, 30);
@@ -566,48 +648,34 @@
         }
 
         function getGroundHeight(x, z) {
-            // Map grid: 5x5 sections, each section is 60 units
-            const sectionSize = 60;
-            const platformHeight = 15;
+            if(!window.gameColliders) return 0;
             
-            // Calculate which section we're in
-            const col = Math.floor((x + CONFIG.mapSize/2) / sectionSize);
-            const row = Math.floor((z + CONFIG.mapSize/2) / sectionSize);
-            
-            // Bounds check
-            if(col < 0 || col >= 5 || row < 0 || row >= 5) return 0;
-            
-            // Map layout
-            const mapLayout = [
-                ['P','P','P','P','P'],
-                ['R','G','G','G','R'],
-                ['G','G','G','G','G'],
-                ['R','G','G','G','R'],
-                ['P','P','P','P','P']
-            ];
-            
-            const type = mapLayout[row][col];
-            
-            if(type === 'P') {
-                return platformHeight; // On platform
-            } else if(type === 'R') {
-                // On ramp - calculate slope
-                const centerX = (col - 2) * sectionSize;
-                const centerZ = (row - 2) * sectionSize;
-                
-                // Distance from center of ramp section
-                const relZ = z - centerZ;
-                
-                // Ramps in row 1 slope up towards platforms
-                // Ramps in row 3 slope up towards platforms
-                if(row === 1) {
-                    // Slope up from bottom to top
-                    const progress = (relZ + sectionSize/2) / sectionSize; // 0 to 1
-                    return platformHeight * progress;
-                } else if(row === 3) {
-                    // Slope up from top to bottom
-                    const progress = (-relZ + sectionSize/2) / sectionSize; // 0 to 1
-                    return platformHeight * progress;
+            // Check each collider
+            for(let collider of window.gameColliders) {
+                // Check if position is within this collider's bounds
+                if(x >= collider.minX && x <= collider.maxX && 
+                   z >= collider.minZ && z <= collider.maxZ) {
+                    
+                    if(collider.type === 'platform') {
+                        return collider.height;
+                    } else if(collider.type === 'ramp') {
+                        // Calculate height based on position on ramp
+                        const relZ = z - (collider.minZ + collider.maxZ) / 2;
+                        
+                        if(collider.row === 1) {
+                            // Top ramp - slopes up toward north (negative Z)
+                            // At maxZ (south/bottom edge): height = 0
+                            // At minZ (north/top edge): height = platformHeight
+                            const progress = (collider.maxZ - z) / collider.length;
+                            return Math.max(0, Math.min(collider.height, collider.height * progress));
+                        } else if(collider.row === 3) {
+                            // Bottom ramp - slopes up toward south (positive Z)
+                            // At minZ (north/top edge): height = 0
+                            // At maxZ (south/bottom edge): height = platformHeight
+                            const progress = (z - collider.minZ) / collider.length;
+                            return Math.max(0, Math.min(collider.height, collider.height * progress));
+                        }
+                    }
                 }
             }
             
