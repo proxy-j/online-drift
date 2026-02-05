@@ -25,7 +25,11 @@ io.on('connection', (socket) => {
     angle: 0,
     isDrifting: false,
     color: Math.random() * 0xffffff,
-    name: "Racer " + socket.id.substr(0,4)
+    name: "Racer " + socket.id.substr(0,4),
+    gameMode: 'freeplay',
+    isIt: false,
+    kills: 0,
+    deaths: 0
   };
   
   // Send current state to new player
@@ -38,10 +42,24 @@ io.on('connection', (socket) => {
   });
   
   // Listen for the Name Entry event
-  socket.on('joinGame', (playerName) => {
+  socket.on('joinGame', (data) => {
     if(players[socket.id]) {
-        players[socket.id].name = playerName;
-        io.emit('updatePlayerName', { id: socket.id, name: playerName });
+        if(typeof data === 'string') {
+          // Old format compatibility
+          players[socket.id].name = data;
+        } else {
+          players[socket.id].name = data.name;
+          players[socket.id].gameMode = data.gameMode || 'freeplay';
+          
+          // If tag mode, make first player "it"
+          if(data.gameMode === 'tag') {
+            const tagPlayers = Object.keys(players).filter(id => players[id].gameMode === 'tag');
+            if(tagPlayers.length === 1) {
+              players[socket.id].isIt = true;
+            }
+          }
+        }
+        io.emit('updatePlayerName', { id: socket.id, name: players[socket.id].name });
     }
   });
   
@@ -61,6 +79,55 @@ io.on('connection', (socket) => {
         angle: players[socket.id].angle,
         isDrifting: players[socket.id].isDrifting
       });
+    }
+  });
+  
+  // Tag mode
+  socket.on('tagPlayer', (targetId) => {
+    if(players[socket.id] && players[targetId]) {
+      if(players[socket.id].isIt && players[socket.id].gameMode === 'tag' && players[targetId].gameMode === 'tag') {
+        players[socket.id].isIt = false;
+        players[targetId].isIt = true;
+        
+        io.emit('tagUpdate', {
+          tagger: socket.id,
+          tagged: targetId
+        });
+      }
+    }
+  });
+  
+  // Shooting mode
+  socket.on('shoot', (bulletData) => {
+    if(players[socket.id] && players[socket.id].gameMode === 'shooting') {
+      socket.broadcast.emit('playerShot', {
+        playerId: socket.id,
+        x: bulletData.x,
+        y: bulletData.y,
+        z: bulletData.z,
+        velX: bulletData.velX,
+        velZ: bulletData.velZ
+      });
+    }
+  });
+  
+  socket.on('hit', (victimId) => {
+    if(players[socket.id] && players[victimId]) {
+      if(players[socket.id].gameMode === 'shooting' && players[victimId].gameMode === 'shooting') {
+        players[socket.id].kills++;
+        players[victimId].deaths++;
+        
+        io.emit('playerHit', {
+          killer: socket.id,
+          victim: victimId
+        });
+      }
+    }
+  });
+  
+  socket.on('respawn', () => {
+    if(players[socket.id]) {
+      players[socket.id].kills = 0;
     }
   });
   
