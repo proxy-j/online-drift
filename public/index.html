@@ -49,11 +49,47 @@
             <p>Enter your racer name:</p>
             <input type="text" id="playerNameInput" placeholder="Your Name" maxlength="10">
             <br>
+            <p style="margin-top: 15px;">Select Game Mode:</p>
+            <select id="gameModeSelect" style="padding: 8px; font-size: 1rem; margin-bottom: 15px;">
+                <option value="freeplay">Free Play (Drift & Explore)</option>
+                <option value="tag">Tag (Chase & Tag Others)</option>
+                <option value="shooting">Shooting (Combat Mode)</option>
+            </select>
+            <br>
             <button onclick="startGame()">JOIN GAME</button>
         </div>
     </div>
 
     <div id="speedometer">0 km/h</div>
+    
+    <!-- Game Mode HUD -->
+    <div id="gameHUD" style="position: absolute; top: 20px; left: 20px; display: none;">
+        <!-- Tag Mode HUD -->
+        <div id="tagHUD" style="display: none; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; color: white;">
+            <h3 style="margin: 0 0 10px 0; color: #ff4444;">🏃 TAG MODE</h3>
+            <div id="tagStatus">You are: <span style="color: #44ff44;">Safe</span></div>
+            <div style="font-size: 0.8rem; margin-top: 5px;">Chase and tag other players!</div>
+        </div>
+        
+        <!-- Shooting Mode HUD -->
+        <div id="shootingHUD" style="display: none; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; color: white;">
+            <h3 style="margin: 0 0 10px 0; color: #ff4444;">🎯 SHOOTING MODE</h3>
+            <div>Kills: <span id="killCount" style="color: #44ff44; font-weight: bold;">0</span></div>
+            <div>Deaths: <span id="deathCount" style="color: #ff4444; font-weight: bold;">0</span></div>
+            <div style="font-size: 0.8rem; margin-top: 5px;">Press SPACE to shoot</div>
+        </div>
+    </div>
+    
+    <!-- Death/Respawn Overlay -->
+    <div id="deathOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 5;">
+        <div style="background: #fff; padding: 40px; border-radius: 15px; text-align: center;">
+            <h2 style="color: #ff0044; margin: 0 0 20px 0;">💀 YOU DIED!</h2>
+            <p style="font-size: 1.2rem; margin-bottom: 20px;">Your kills have been reset</p>
+            <button onclick="respawn()" style="padding: 15px 30px; font-size: 1.2rem; background: #44ff44; color: #000; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                RESPAWN
+            </button>
+        </div>
+    </div>
 
     <div id="settings">
         <h3 style="margin-top:0; border-bottom:1px solid #555; padding-bottom:5px;">Performance</h3>
@@ -98,14 +134,23 @@
         // --- Globals ---
         let scene, camera, renderer, socket;
         let car, carVelocity = new THREE.Vector3();
-        let inputs = { up: false, down: false, left: false, right: false };
+        let inputs = { up: false, down: false, left: false, right: false, space: false };
         let particles = [];
+        let bullets = [];
         let speed = 0;
         let carHeading = 0;
         let otherPlayers = {}; 
         let dirLight;
         let myName = "Player";
         let isGameActive = false;
+        let currentGameMode = 'freeplay';
+        
+        // Game mode stats
+        let kills = 0;
+        let deaths = 0;
+        window.isIt = false; // For tag mode
+        let canShoot = true;
+        let shootCooldown = 500; // ms between shots
 
         let SETTINGS = {
             smokeChance: 0.5,
@@ -117,19 +162,46 @@
         // Expose startGame to HTML button
         window.startGame = function() {
             const nameInput = document.getElementById('playerNameInput');
+            const modeSelect = document.getElementById('gameModeSelect');
+            
             if(nameInput.value.trim() !== "") {
                 myName = nameInput.value.trim();
+                currentGameMode = modeSelect.value;
+                
                 document.getElementById('loginOverlay').style.display = 'none';
                 isGameActive = true;
                 
-                // If socket is ready, send name
+                // Show appropriate HUD
+                document.getElementById('gameHUD').style.display = 'block';
+                if(currentGameMode === 'tag') {
+                    document.getElementById('tagHUD').style.display = 'block';
+                } else if(currentGameMode === 'shooting') {
+                    document.getElementById('shootingHUD').style.display = 'block';
+                }
+                
+                // If socket is ready, send name and mode
                 if(socket) {
-                    socket.emit('joinGame', myName);
+                    socket.emit('joinGame', { name: myName, gameMode: currentGameMode });
                     // Add my own name tag
                     addNameTag(car, myName, true);
                 }
             } else {
                 alert("Please enter a name!");
+            }
+        };
+        
+        window.respawn = function() {
+            document.getElementById('deathOverlay').style.display = 'none';
+            kills = 0;
+            document.getElementById('killCount').innerText = kills;
+            
+            // Reset position
+            car.position.set(Math.random() * 100 - 50, 0, Math.random() * 100 - 50);
+            carVelocity.set(0, 0, 0);
+            speed = 0;
+            
+            if(socket) {
+                socket.emit('respawn');
             }
         };
 
@@ -307,6 +379,51 @@
 
             socket.on('playerDisconnected', (id) => {
                 if (otherPlayers[id]) { scene.remove(otherPlayers[id].mesh); delete otherPlayers[id]; }
+            });
+            
+            // Tag mode events
+            socket.on('tagUpdate', (data) => {
+                if(data.tagger === socket.id) {
+                    window.isIt = false;
+                    document.getElementById('tagStatus').innerHTML = 'You are: <span style="color: #44ff44;">Safe</span>';
+                } else if(data.tagged === socket.id) {
+                    window.isIt = true;
+                    document.getElementById('tagStatus').innerHTML = 'You are: <span style="color: #ff4444;">IT!</span>';
+                }
+                
+                // Update other player colors
+                if(otherPlayers[data.tagged]) {
+                    otherPlayers[data.tagged].isIt = true;
+                }
+                if(otherPlayers[data.tagger]) {
+                    otherPlayers[data.tagger].isIt = false;
+                }
+            });
+            
+            // Shooting mode events
+            socket.on('playerShot', (data) => {
+                // Create bullet from other player
+                const bulletGeo = new THREE.SphereGeometry(0.3, 8, 8);
+                const bulletMat = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+                const bullet = new THREE.Mesh(bulletGeo, bulletMat);
+                bullet.position.set(data.x, data.y, data.z);
+                scene.add(bullet);
+                
+                bullets.push({
+                    mesh: bullet,
+                    vel: { x: data.velX, z: data.velZ },
+                    ownerId: data.playerId,
+                    life: 100
+                });
+            });
+            
+            socket.on('playerHit', (data) => {
+                if(data.victim === socket.id) {
+                    // I got hit!
+                    deaths++;
+                    document.getElementById('deathCount').innerText = deaths;
+                    document.getElementById('deathOverlay').style.display = 'flex';
+                }
             });
         }
 
@@ -617,6 +734,95 @@
             if(e.key === 'ArrowDown') inputs.down = pressed;
             if(e.key === 'ArrowLeft') inputs.left = pressed;
             if(e.key === 'ArrowRight') inputs.right = pressed;
+            if(e.key === ' ') {
+                inputs.space = pressed;
+                if(pressed && currentGameMode === 'shooting' && canShoot) {
+                    shootBullet();
+                }
+            }
+        }
+        
+        function shootBullet() {
+            canShoot = false;
+            setTimeout(() => { canShoot = true; }, shootCooldown);
+            
+            // Create bullet
+            const bulletGeo = new THREE.SphereGeometry(0.3, 8, 8);
+            const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const bullet = new THREE.Mesh(bulletGeo, bulletMat);
+            
+            // Position bullet at front of car
+            const spawnDist = 3;
+            bullet.position.set(
+                car.position.x + Math.sin(carHeading) * spawnDist,
+                car.position.y + 1,
+                car.position.z + Math.cos(carHeading) * spawnDist
+            );
+            
+            // Bullet velocity
+            const bulletSpeed = 3;
+            const bulletVel = {
+                x: Math.sin(carHeading) * bulletSpeed,
+                z: Math.cos(carHeading) * bulletSpeed
+            };
+            
+            scene.add(bullet);
+            bullets.push({
+                mesh: bullet,
+                vel: bulletVel,
+                ownerId: socket.id,
+                life: 100 // frames before despawn
+            });
+            
+            // Send to server
+            if(socket) {
+                socket.emit('shoot', {
+                    x: bullet.position.x,
+                    y: bullet.position.y,
+                    z: bullet.position.z,
+                    velX: bulletVel.x,
+                    velZ: bulletVel.z
+                });
+            }
+        }
+        
+        function updateBullets() {
+            for(let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.mesh.position.x += b.vel.x;
+                b.mesh.position.z += b.vel.z;
+                b.life--;
+                
+                // Check if bullet hits any player
+                if(b.ownerId === socket.id && currentGameMode === 'shooting') {
+                    Object.keys(otherPlayers).forEach(id => {
+                        const other = otherPlayers[id].mesh;
+                        const dx = b.mesh.position.x - other.position.x;
+                        const dz = b.mesh.position.z - other.position.z;
+                        const dist = Math.sqrt(dx * dx + dz * dz);
+                        
+                        if(dist < 3) {
+                            // Hit!
+                            scene.remove(b.mesh);
+                            bullets.splice(i, 1);
+                            
+                            kills++;
+                            document.getElementById('killCount').innerText = kills;
+                            
+                            if(socket) {
+                                socket.emit('hit', id);
+                            }
+                            return;
+                        }
+                    });
+                }
+                
+                // Remove old bullets
+                if(b.life <= 0) {
+                    scene.remove(b.mesh);
+                    bullets.splice(i, 1);
+                }
+            }
         }
 
         function onWindowResize() {
@@ -631,6 +837,7 @@
                 updatePhysics();
                 updateMultiplayerCars();
                 updateEffects();
+                updateBullets();
                 updateCamera();
             }
             renderer.render(scene, camera);
@@ -669,6 +876,43 @@
             }
             
             return 0; // Ground level
+        }
+
+        function checkCarCollisions(newX, newZ) {
+            const carRadius = 3; // Collision radius for cars
+            
+            // Check collision with other players
+            Object.keys(otherPlayers).forEach(id => {
+                const other = otherPlayers[id].mesh;
+                const dx = newX - other.position.x;
+                const dz = newZ - other.position.z;
+                const distance = Math.sqrt(dx * dx + dz * dz);
+                
+                if(distance < carRadius * 2) {
+                    // Collision detected!
+                    const angle = Math.atan2(dz, dx);
+                    const force = 0.5;
+                    
+                    // Bounce away from other car
+                    carVelocity.x += Math.cos(angle) * force;
+                    carVelocity.z += Math.sin(angle) * force;
+                    speed *= 0.7; // Reduce speed on collision
+                    
+                    // Handle game mode interactions
+                    if(currentGameMode === 'tag' && !otherPlayers[id].isIt) {
+                        // Tag the other player
+                        if(window.isIt) {
+                            socket.emit('tagPlayer', id);
+                        }
+                    } else if(currentGameMode === 'shooting') {
+                        // Just bounce in shooting mode (damage is from bullets)
+                    }
+                    
+                    return true;
+                }
+            });
+            
+            return false;
         }
 
         function checkCollisions(newX, newZ, currentY) {
@@ -740,7 +984,10 @@
             const newX = car.position.x + carVelocity.x;
             const newZ = car.position.z + carVelocity.z;
             
-            // Check collisions
+            // Check car-to-car collisions
+            checkCarCollisions(newX, newZ);
+            
+            // Check collisions with platforms
             const collision = checkCollisions(newX, newZ, car.position.y);
             
             if(collision.canMove) {
