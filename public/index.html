@@ -90,7 +90,7 @@
 
         // --- Config ---
         const CONFIG = {
-            maxSpeed: 1.2, acceleration: 0.02, friction: 0.98, turnSpeed: 0.045,
+            maxSpeed: 2.0, acceleration: 0.035, friction: 0.98, turnSpeed: 0.045,
             driftFactor: 0.94, cameraHeight: 15, cameraDistance: 25, cameraLerp: 0.1,
             mapSize: 400
         };
@@ -385,7 +385,7 @@
             // Map grid: 5x5 sections, each section is 80 units to fill the map better
             const sectionSize = 80;
             const platformHeight = 15;
-            const platformThickness = 3;
+            const platformThickness = platformHeight; // Make it a solid block
             
             // Map layout based on emoji grid:
             // 🟦🟦🟦🟦🟦  (top platforms in corners)
@@ -405,12 +405,16 @@
             // Store platform and ramp collision boxes
             window.gameColliders = [];
 
-            // Create platforms (🟦) - flat elevated surfaces
+            // Concrete colors
+            const platformColor = 0x8899aa; // Light gray-blue concrete
+            const rampColor = 0x999999; // Gray concrete
+            
+            // Create platforms (🟦) - SOLID filled blocks
             const platformGeo = new THREE.BoxGeometry(sectionSize, platformThickness, sectionSize);
             const platformMat = new THREE.MeshStandardMaterial({ 
-                color: 0x4488ff,
-                roughness: 0.6,
-                metalness: 0.2
+                color: platformColor,
+                roughness: 0.8,
+                metalness: 0.1
             });
             
             // Build the map
@@ -421,9 +425,9 @@
                     const z = (row - 2) * sectionSize;
                     
                     if(type === 'P') {
-                        // Platform - flat box at elevated height
+                        // Platform - SOLID block from ground to platform height
                         const platform = new THREE.Mesh(platformGeo, platformMat);
-                        platform.position.set(x, platformHeight, z);
+                        platform.position.set(x, platformHeight / 2, z); // Center at half height
                         platform.castShadow = true;
                         platform.receiveShadow = true;
                         scene.add(platform);
@@ -435,72 +439,57 @@
                             maxX: x + sectionSize/2,
                             minZ: z - sectionSize/2,
                             maxZ: z + sectionSize/2,
-                            height: platformHeight
+                            height: platformHeight,
+                            topY: platformHeight
                         });
                         
-                        // Add glow effect under platform
-                        const glowLight = new THREE.PointLight(0x4488ff, 20, 40);
-                        glowLight.position.set(x, platformHeight - 5, z);
+                        // Add subtle glow effect on top edge
+                        const glowLight = new THREE.PointLight(0x6688aa, 10, 30);
+                        glowLight.position.set(x, platformHeight + 2, z);
                         scene.add(glowLight);
                         
                     } else if(type === 'R') {
-                        // Ramp - create properly sloped geometry
-                        // Use THREE.BufferGeometry to make a custom wedge shape
+                        // Ramp - SOLID wedge-shaped block
                         const rampWidth = sectionSize;
                         const rampLength = sectionSize;
                         const rampHeight = platformHeight;
                         
-                        // Create wedge-shaped ramp
+                        // Create SOLID wedge geometry
                         const rampGeo = new THREE.BufferGeometry();
                         
-                        // Vertices for a wedge (ramp)
+                        // Vertices for a SOLID wedge
                         const vertices = new Float32Array([
-                            // Front face (low end)
-                            -rampWidth/2, 0, rampLength/2,
-                            rampWidth/2, 0, rampLength/2,
-                            rampWidth/2, 0, rampLength/2,
-                            -rampWidth/2, 0, rampLength/2,
+                            // Bottom face (4 corners)
+                            -rampWidth/2, 0, -rampLength/2,  // 0
+                            rampWidth/2, 0, -rampLength/2,   // 1
+                            rampWidth/2, 0, rampLength/2,    // 2
+                            -rampWidth/2, 0, rampLength/2,   // 3
                             
-                            // Back face (high end)
-                            -rampWidth/2, rampHeight, -rampLength/2,
-                            rampWidth/2, rampHeight, -rampLength/2,
-                            
-                            // Bottom
-                            -rampWidth/2, 0, rampLength/2,
-                            rampWidth/2, 0, rampLength/2,
-                            rampWidth/2, 0, -rampLength/2,
-                            -rampWidth/2, 0, -rampLength/2,
-                            
-                            // Sloped top
-                            -rampWidth/2, 0, rampLength/2,
-                            rampWidth/2, 0, rampLength/2,
-                            rampWidth/2, rampHeight, -rampLength/2,
-                            -rampWidth/2, rampHeight, -rampLength/2,
-                            
-                            // Left side
-                            -rampWidth/2, 0, rampLength/2,
-                            -rampWidth/2, 0, -rampLength/2,
-                            -rampWidth/2, rampHeight, -rampLength/2,
-                            
-                            // Right side
-                            rampWidth/2, 0, rampLength/2,
-                            rampWidth/2, rampHeight, -rampLength/2,
-                            rampWidth/2, 0, -rampLength/2,
+                            // Top edge (2 corners - the high side)
+                            -rampWidth/2, rampHeight, -rampLength/2,  // 4
+                            rampWidth/2, rampHeight, -rampLength/2,   // 5
                         ]);
                         
                         const indices = [
-                            // Bottom
-                            6,7,8, 6,8,9,
-                            // Top sloped surface
-                            10,11,12, 10,12,13,
-                            // Front (low)
-                            0,1,10, 1,11,10,
-                            // Back (high)
-                            4,5,12, 4,12,13,
-                            // Left
-                            14,15,16, 14,16,16,
-                            // Right  
-                            17,18,19, 17,17,19
+                            // Bottom face
+                            0, 2, 1,
+                            0, 3, 2,
+                            
+                            // Sloped top surface
+                            3, 2, 5,
+                            3, 5, 4,
+                            
+                            // Back face (high end)
+                            4, 5, 1,
+                            4, 1, 0,
+                            
+                            // Left side
+                            0, 3, 4,
+                            3, 4, 4,
+                            
+                            // Right side
+                            1, 5, 2,
+                            2, 5, 5,
                         ];
                         
                         rampGeo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
@@ -508,8 +497,8 @@
                         rampGeo.computeVertexNormals();
                         
                         const rampMat = new THREE.MeshStandardMaterial({ 
-                            color: 0xff4444,
-                            roughness: 0.7,
+                            color: rampColor,
+                            roughness: 0.8,
                             metalness: 0.1
                         });
                         
@@ -519,10 +508,10 @@
                         // Top row (row 1) ramps point UP (toward row 0 platforms)
                         // Bottom row (row 3) ramps point DOWN (toward row 4 platforms)
                         if(row === 1) {
-                            // Top ramp - points upward (toward north/row 0)
+                            // Top ramp - high end at north, low end at south
                             ramp.rotation.y = 0; // Face north
                         } else if(row === 3) {
-                            // Bottom ramp - points downward (toward south/row 4)
+                            // Bottom ramp - high end at south, low end at north
                             ramp.rotation.y = Math.PI; // Face south (flip 180°)
                         }
                         
@@ -544,8 +533,8 @@
                         });
                         
                         // Add warning lights on ramps
-                        const warnLight = new THREE.PointLight(0xff4444, 15, 30);
-                        warnLight.position.set(x, platformHeight/2 + 5, z);
+                        const warnLight = new THREE.PointLight(0xffaa44, 8, 25);
+                        warnLight.position.set(x, platformHeight/2 + 3, z);
                         scene.add(warnLight);
                     }
                     // 'G' = ground, already created
@@ -682,6 +671,55 @@
             return 0; // Ground level
         }
 
+        function checkCollisions(newX, newZ, currentY) {
+            if(!window.gameColliders) return { canMove: true, bounceX: 0, bounceZ: 0 };
+            
+            const carWidth = 2;
+            const carLength = 4;
+            const tolerance = 1; // Collision margin
+            
+            for(let collider of window.gameColliders) {
+                // Check if car overlaps with collider horizontally
+                const overlapX = newX + carWidth/2 > collider.minX - tolerance && 
+                                 newX - carWidth/2 < collider.maxX + tolerance;
+                const overlapZ = newZ + carLength/2 > collider.minZ - tolerance && 
+                                 newZ - carLength/2 < collider.maxZ + tolerance;
+                
+                if(overlapX && overlapZ) {
+                    if(collider.type === 'platform') {
+                        // Check if we're trying to hit the side of the platform
+                        // If car Y is below platform top, we hit the side
+                        if(currentY < collider.topY - 2) {
+                            // Calculate bounce direction
+                            const centerX = (collider.minX + collider.maxX) / 2;
+                            const centerZ = (collider.minZ + collider.maxZ) / 2;
+                            
+                            const dirX = newX - centerX;
+                            const dirZ = newZ - centerZ;
+                            
+                            // Determine which side we hit
+                            const absX = Math.abs(dirX);
+                            const absZ = Math.abs(dirZ);
+                            
+                            let bounceX = 0, bounceZ = 0;
+                            
+                            if(absX > absZ) {
+                                // Hit left or right side
+                                bounceX = dirX > 0 ? 1 : -1;
+                            } else {
+                                // Hit front or back side
+                                bounceZ = dirZ > 0 ? 1 : -1;
+                            }
+                            
+                            return { canMove: false, bounceX, bounceZ };
+                        }
+                    }
+                }
+            }
+            
+            return { canMove: true, bounceX: 0, bounceZ: 0 };
+        }
+
         function updatePhysics() {
             if (inputs.up) speed += CONFIG.acceleration;
             if (inputs.down) speed -= CONFIG.acceleration;
@@ -697,7 +735,23 @@
 
             carVelocity.x = carVelocity.x * CONFIG.driftFactor + (Math.sin(carHeading) * speed) * (1 - CONFIG.driftFactor);
             carVelocity.z = carVelocity.z * CONFIG.driftFactor + (Math.cos(carHeading) * speed) * (1 - CONFIG.driftFactor);
-            car.position.x += carVelocity.x; car.position.z += carVelocity.z;
+            
+            // Calculate new position
+            const newX = car.position.x + carVelocity.x;
+            const newZ = car.position.z + carVelocity.z;
+            
+            // Check collisions
+            const collision = checkCollisions(newX, newZ, car.position.y);
+            
+            if(collision.canMove) {
+                car.position.x = newX;
+                car.position.z = newZ;
+            } else {
+                // Bounce off
+                carVelocity.x += collision.bounceX * 0.5;
+                carVelocity.z += collision.bounceZ * 0.5;
+                speed *= -0.3; // Reduce speed on collision
+            }
 
             const limit = CONFIG.mapSize / 2 - 3;
             if (car.position.x > limit || car.position.x < -limit) { car.position.x = Math.sign(car.position.x)*limit; speed *= -0.5; }
@@ -749,16 +803,17 @@
             }
         }
 
-        function createSmoke() { spawnSmokeAt(car.position.x, car.position.z, carHeading); }
-        function createRemoteSmoke(mesh) { spawnSmokeAt(mesh.position.x, mesh.position.z, mesh.rotation.y); }
+        function createSmoke() { spawnSmokeAt(car.position.x, car.position.y, car.position.z, carHeading); }
+        function createRemoteSmoke(mesh) { spawnSmokeAt(mesh.position.x, mesh.position.y, mesh.position.z, mesh.rotation.y); }
 
-        function spawnSmokeAt(cx, cz, heading) {
+        function spawnSmokeAt(cx, cy, cz, heading) {
             const offsets = [{x: -1, z: -1.2}, {x: 1, z: -1.2}];
             offsets.forEach(offset => {
                 const cos = Math.cos(heading); const sin = Math.sin(heading);
                 const wx = offset.x * cos + offset.z * sin; const wz = -offset.x * sin + offset.z * cos;
                 const p = new THREE.Mesh(particleGeo, particleMat.clone());
-                p.position.set(cx + wx, 0.2, cz + wz); p.rotation.set(Math.random(), Math.random(), Math.random());
+                p.position.set(cx + wx, cy + 0.2, cz + wz); // Use cy (car's Y position) + slight offset
+                p.rotation.set(Math.random(), Math.random(), Math.random());
                 scene.add(p); particles.push({ mesh: p, life: 1.0, velY: 0.05 + Math.random()*0.05 });
             });
         }
